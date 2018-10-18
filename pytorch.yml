@@ -1,0 +1,13 @@
+name: pytorch
+channels:
+    - conda-forge
+dependencies:
+    - python=3.6
+    - h5py
+    - pyarrow=0.7.1
+    - matplotlib
+    - scikit-learn
+    - scikit-image
+    - pip:
+        - torch
+        - torchvision
