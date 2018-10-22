@@ -24,7 +24,7 @@ resblocks = args.resblocks
 epochs = args.epochs
 os.environ["CUDA_VISIBLE_DEVICES"]=str(args.cuda)
 
-expt_name = 'ResNet_blocks%d_RH1o100_ECAL+HCAL+Trk_lr%s_epochs%d'%(nblocks, str(lr_init), nb_epoch)
+expt_name = 'ResNet_blocks%d_RH1o100_ECAL+HCAL+Trk_lr%s_epochs%d'%(resblocks, str(lr_init), epochs)
 
 class ParquetDataset(Dataset):
     def __init__(self, filename):
@@ -63,7 +63,7 @@ val_sampler = sampler.SubsetRandomSampler(idxs[-val_cut:])
 val_loader = DataLoader(dataset=dset_val, batch_size=120, num_workers=10, sampler=val_sampler)
 
 import torch_resnet_single as networks
-resnet = networks.ResNet(3, nblocks, [16, 32])
+resnet = networks.ResNet(3, resblocks, [16, 32])
 resnet.cuda()
 optimizer = optim.Adam(resnet.parameters(), lr=lr_init)
 lr_scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[10,20], gamma=0.5)
@@ -122,7 +122,7 @@ print_step = 1000
 roc_auc_best = 0.5
 print(">> Training <<<<<<<<")
 f = open('%s.log'%(expt_name), 'w')
-for epoch in range(nb_epoch):
+for epoch in range(epochs):
 
     s = '>> Epoch %d <<<<<<<<'%(epoch+1)
     print(s)
