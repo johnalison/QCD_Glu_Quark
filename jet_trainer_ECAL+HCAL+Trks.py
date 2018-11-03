@@ -38,7 +38,9 @@ class ParquetDataset(Dataset):
         data['m0'] = np.float32(data['m0'])
         data['pt'] = np.float32(data['pt'])
         # Preprocessing
-        data['X_jets'] = data['X_jets']/100.
+        data['X_jets'][data['X_jets'] < 1.e-3] = 0. # Zero-Suppression
+        data['X_jets'][-1,...] = 25.*data['X_jets'][-1,...] # For HCAL: to match pixel intensity distn of other layers
+        data['X_jets'] = data['X_jets']/100. # To standardize
         return dict(data)
     def __len__(self):
         return self.parquet.num_row_groups

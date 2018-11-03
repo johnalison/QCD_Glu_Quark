@@ -36,7 +36,9 @@ class ParquetDataset(Dataset):
         data['X_ECAL_stacked'] = np.float32(data['X_ECAL_stacked'][0]) 
         data['y'] = np.float32(data['y'])
         # Preprocessing
-        data['X_ECAL_stacked'] = data['X_ECAL_stacked']/100.
+        data['X_ECAL_stacked'][data['X_ECAL_stacked'] < 1.e-3] = 0. # Zero-Suppression
+        data['X_ECAL_stacked'][-1,...] = 25.*data['X_ECAL_stacked'][-1,...] # For HCAL: to match pixel intensity distn of other layers 
+        data['X_ECAL_stacked'] = data['X_ECAL_stacked']/100. # To standardize
         return dict(data)
     def __len__(self):
         return self.parquet.num_row_groups
