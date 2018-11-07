@@ -3,7 +3,7 @@ random.seed(1337)
 import h5py
 import time
 import numpy as np
-import re
+import glob, re
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -18,7 +18,7 @@ def np2arrowArray(x):
 def convert_to_Parquet(decays, start, stop, chunk_size, expt_name, set_name):
     
     # Open the input HDF5 file
-    dsets = [h5py.File('%s.hdf5'%decay) for decay in decays]
+    dsets = [h5py.File('%s'%decay) for decay in decays]
     keys = ['X_ECAL_stacked', 'y_jets'] # key names in in put hdf5
     row0 = [np2arrowArray(dsets[0][key][0]) for key in keys]
     keys = ['X_ECAL_stacked', 'y'] # desired key names in output parquet
@@ -63,50 +63,38 @@ def convert_to_Parquet(decays, start, stop, chunk_size, expt_name, set_name):
     return filename
     
 # MAIN
-runId = 2
-decays = [
-    #'QCD_Pt_80_170_00000_IMG_RH1_list00000_n107778_label0_run0',
-    #'QCD_Pt_80_170_00000_IMG_RH1_list00000_n107778_label1_run0'
-    #'QCD_Pt_80_170_00000_IMG_RH1_list00000_n148937_label0_run1',
-    #'QCD_Pt_80_170_00000_IMG_RH1_list00000_n148937_label1_run1'
-    'QCD_Pt_80_170_00000_IMG_RH1_list00000_n140182_label0_run2',
-    'QCD_Pt_80_170_00000_IMG_RH1_list00000_n140182_label1_run2'
-    ]
-assert runId == int(decays[0][-1])
-train_total = decays[0].split("_")[-3][1:] 
-train_total = int(train_total) 
-print('total events per file:', train_total)
+chunk_size = 3200
+jetId = 0
 
-train_chunk_size = 3200 
-train_start, train_stop = 0, train_total 
-#assert (train_stop-train_start) % train_chunk_size == 0
+for set_name in list(['train', 'test']):
 
-#val_chunk_size = 3200
-#val_start, val_stop = train_stop, 288000 
-#assert (val_stop-val_start) % val_chunk_size == 0
-
-expt_name_ = 'QCDToGGQQ_IMG_RH1all_run%d'%runId
-
-#for set_name in list(['train', 'val']):
-for set_name in list(['train']):
-
-    print('Doing %s...'%set_name)
+    print('>> Doing %s...'%set_name)
 
     if set_name == 'train':
-        start = train_start
-        stop = train_stop
-        chunk_size = train_chunk_size
+        list_idx = '00000'
     else:
-        start = val_start
-        stop = val_stop
-        chunk_size = val_chunk_size
+        list_idx = '00001'
 
-    expt_name = '%s_n%d'%(expt_name_, 2*(stop-start))
+    for runId in range(3):
 
-    now = time.time()
-    f = convert_to_Parquet(decays, start, stop, chunk_size, expt_name, set_name)
-    print('%s time: %.2f'%(set_name,time.time()-now))
-    reader = pq.ParquetFile(f)
-    for i in range(10):
-        print(i, reader.read_row_group(i).to_pydict()['y'])
-    print('total events written:',reader.num_row_groups)
+        print(' >> Doing runId: %d'%runId)
+
+        decays = glob.glob('QCD_Pt_80_170_%s_IMG_n*_label?_run%d.hdf5'%(list_idx, runId))
+        print(' >>',decays)
+        assert len(decays) == 2
+        nevts_total = decays[0].split("_")[-3][1:]
+        nevts_total = int(nevts_total)
+        print(' >> Total events per file:', nevts_total)
+
+        start, stop = 0, nevts_total
+
+        expt_name = 'QCDToGGQQ_IMG_RH1all_run%d_n%d'%(runId, len(decays)*(stop-start))
+
+        now = time.time()
+        f = convert_to_Parquet(decays, start, stop, chunk_size, expt_name, set_name)
+        print(' >> %s time: %.2f'%(set_name,time.time()-now))
+
+        reader = pq.ParquetFile(f)
+        for i in range(10):
+            print(i, reader.read_row_group(i).to_pydict()['y'])
+        print(' >> Total events written:',reader.num_row_groups)
