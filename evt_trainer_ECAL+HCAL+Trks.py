@@ -1,6 +1,6 @@
 import numpy as np
 np.random.seed(0)
-import os
+import os, glob
 import time
 import h5py
 import pyarrow as pa
@@ -12,7 +12,7 @@ from torch.utils.data import *
 from sklearn.metrics import roc_curve, auc
 
 import argparse
-parser = argparse.ArgumentParser(description='Training parameters')
+parser = argparse.ArgumentParser(description='Training parameters.')
 parser.add_argument('-e', '--epochs', default=30, type=int, help='Number of training epochs.')
 parser.add_argument('-l', '--lr_init', default=5.e-4, type=float, help='Initial learning rate.')
 parser.add_argument('-b', '--resblocks', default=3, type=int, help='Number of residual blocks.')
@@ -30,7 +30,7 @@ class ParquetDataset(Dataset):
     def __init__(self, filename):
         self.parquet = pq.ParquetFile(filename)
         self.cols = None # read all columns
-        #self.cols = ['X_jets.list.item.list.item.list.item','y']
+        #self.cols = ['X_ECAL_stacked.list.item.list.item.list.item','y']
     def __getitem__(self, index):
         data = self.parquet.read_row_group(index, columns=self.cols).to_pydict()
         data['X_ECAL_stacked'] = np.float32(data['X_ECAL_stacked'][0]) 
@@ -44,24 +44,22 @@ class ParquetDataset(Dataset):
         return self.parquet.num_row_groups
 
 decay = 'QCDToGGQQ_IMG_RH1all'
-decays = ['%s_run0_n215556'%decay, '%s_run1_n297980'%decay, '%s_run2_n280364'%decay]
+decays = glob.glob('IMG/%s_run?_n*.train.snappy.parquet'%decay)
 expt_name = '%s_%s'%(decay, expt_name)
+print(">> Input files:",decays)
+assert len(decays) == 3, "len(decays) = %d"%(len(decays))
 for d in ['MODELS', 'METRICS']:
     if not os.path.isdir('%s/%s'%(d, expt_name)):
-        os.mkdir('%s/%s'%(d, expt_name))
+        os.makedirs('%s/%s'%(d, expt_name))
 
-ntrain_total = sum([int(d.split('_')[-1][1:]) for d in decays]) #790k
-idxs = np.random.permutation(ntrain_total)
-#train_cut = 2*384*1000
-train_cut = 2*288*1000
-val_cut = 60000
-
-dset_train = ConcatDataset([ParquetDataset("IMG/%s.train.snappy.parquet"%d) for d in decays])
+train_cut = 2*384*1000 # CMS OpenData study
+dset_train = ConcatDataset([ParquetDataset(d) for d in decays])
+idxs = np.random.permutation(len(dset_train))
 train_sampler = sampler.SubsetRandomSampler(idxs[:train_cut])
 train_loader = DataLoader(dataset=dset_train, batch_size=32, num_workers=10, sampler=train_sampler, pin_memory=True)
 
-dset_val = ConcatDataset([ParquetDataset("IMG/%s.train.snappy.parquet"%d) for d in decays])
-val_sampler = sampler.SubsetRandomSampler(idxs[-val_cut:])
+dset_val = ConcatDataset([ParquetDataset(d) for d in decays])
+val_sampler = sampler.SubsetRandomSampler(idxs[train_cut:])
 val_loader = DataLoader(dataset=dset_val, batch_size=120, num_workers=10, sampler=val_sampler)
 
 import torch_resnet_single as networks
@@ -88,10 +86,10 @@ def do_eval(resnet, val_loader, f, roc_auc_best, epoch):
     now = time.time() - now
     y_pred_ = np.concatenate(y_pred_)
     y_truth_ = np.concatenate(y_truth_)
-    s = '%d: Val time:%.2fs in %d steps'%(epoch+1, now, len(val_loader))
+    s = '%d: Val time:%.2fs in %d steps'%(epoch, now, len(val_loader))
     print(s)
     f.write('%s\n'%(s))
-    s = '%d: Val loss:%f, acc:%f'%(epoch+1, loss_/len(val_loader), acc_/len(val_loader))
+    s = '%d: Val loss:%f, acc:%f'%(epoch, loss_/len(val_loader), acc_/len(val_loader))
     print(s)
     f.write('%s\n'%(s))
 
@@ -101,21 +99,21 @@ def do_eval(resnet, val_loader, f, roc_auc_best, epoch):
     print(s)
     f.write('%s\n'%(s))
 
-    #if roc_auc > roc_auc_best:
-    #    roc_auc_best = roc_auc
-    #    f.write('Best ROC AUC:%.4f\n'%roc_auc_best)
-    #    score_str = 'epoch%d_auc%.4f'%(epoch+1, roc_auc_best)
+    if roc_auc > roc_auc_best:
+        roc_auc_best = roc_auc
+        f.write('Best ROC AUC:%.4f\n'%roc_auc_best)
+        score_str = 'epoch%d_auc%.4f'%(epoch, roc_auc_best)
 
-    #    filename = 'MODELS/%s/model_%s.pkl'%(expt_name, score_str)
-    #    model_dict = {'model': resnet.state_dict(), 'optim': optimizer.state_dict()}
-    #    torch.save(model_dict, filename)
+        filename = 'MODELS/%s/model_%s.pkl'%(expt_name, score_str)
+        model_dict = {'model': resnet.state_dict(), 'optim': optimizer.state_dict()}
+        torch.save(model_dict, filename)
 
-    #    h = h5py.File('METRICS/%s/metrics_%s.hdf5'%(expt_name, score_str), 'w')
-    #    h.create_dataset('fpr', data=fpr)
-    #    h.create_dataset('tpr', data=tpr)
-    #    h.create_dataset('y_truth', data=y_truth_)
-    #    h.create_dataset('y_pred', data=y_pred_)
-    #    h.close()
+        h = h5py.File('METRICS/%s/metrics_%s.hdf5'%(expt_name, score_str), 'w')
+        h.create_dataset('fpr', data=fpr)
+        h.create_dataset('tpr', data=tpr)
+        h.create_dataset('y_truth', data=y_truth_)
+        h.create_dataset('y_pred', data=y_pred_)
+        h.close()
 
     return roc_auc_best
 
@@ -124,9 +122,10 @@ print_step = 1000
 roc_auc_best = 0.5
 print(">> Training <<<<<<<<")
 f = open('%s.log'%(expt_name), 'w')
-for epoch in range(epochs):
+for e in range(epochs):
 
-    s = '>> Epoch %d <<<<<<<<'%(epoch+1)
+    epoch = e+1
+    s = '>> Epoch %d <<<<<<<<'%(epoch)
     print(s)
     f.write('%s\n'%(s))
 
@@ -144,17 +143,17 @@ for epoch in range(epochs):
         if i % print_step == 0:
             pred = logits.ge(0.).byte()
             acc = pred.eq(y.byte()).float().mean()
-            s = '%d: Train loss:%f, acc:%f'%(epoch+1, loss.item(), acc.item())
+            s = '%d: Train loss:%f, acc:%f'%(epoch, loss.item(), acc.item())
             print(s)
         # For more frequent validation:
-        #if epoch+1 > 1 and i % eval_step == 0:
+        #if epoch > 1 and i % eval_step == 0:
         #    resnet.eval()
         #    roc_auc_best = do_eval(resnet, val_loader, f, roc_auc_best, epoch)
         #    resnet.train()
 
     f.write('%s\n'%(s))
     now = time.time() - now
-    s = '%d: Train time:%.2fs in %d steps'%(epoch+1, now, len(train_loader))
+    s = '%d: Train time:%.2fs in %d steps'%(epoch, now, len(train_loader))
     print(s)
     f.write('%s\n'%(s))
 
