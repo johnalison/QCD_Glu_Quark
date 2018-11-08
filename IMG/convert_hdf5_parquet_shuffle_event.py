@@ -64,7 +64,6 @@ def convert_to_Parquet(decays, start, stop, chunk_size, expt_name, set_name):
     
 # MAIN
 chunk_size = 3200
-jetId = 0
 
 for set_name in list(['train', 'test']):
 
